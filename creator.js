@@ -299,7 +299,7 @@ function createJob (execlib, leveldblib) {
 
   LevelDBJob.prototype.doUpdateConfirm = function (msgid, result) {
     if (result) {
-      console.log('setting confirmed to', msgid);
+      //console.log('setting confirmed to', msgid);
       return this.syncs.put('confirmed', msgid);
     } else {
       return q(0);
