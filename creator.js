@@ -89,6 +89,9 @@ function createJob (execlib, leveldblib) {
       sd = q.defer(),
       promises = [md.promise, sd.promise];
 
+    if (!lib.isArray(jobusernames)) {
+      jobusernames = [];
+    }
     new (leveldblib.DBArray)({
       dbname: Path.join(this.path, 'messages'),
       dbcreationoptions: {

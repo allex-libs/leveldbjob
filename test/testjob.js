@@ -1,14 +1,17 @@
 var tester = require('./'+process.argv[3]),
   _consumerid = 0,
-  _consumercount = 0;
+  _consumercount = 0,
+  _consumerattempts = 500;
 
 function Consumer (job) {
   _consumercount++;
   this.id = 'Consumer '+(++_consumerid);
   this.job = job;
+  this.attempts = _consumerattempts;
 }
 Consumer.prototype.destroy = function () {
   console.log(this.id, 'dying');
+  this.attempts = null;
   this.job = null;
   this.id = null;
   _consumercount--;
@@ -30,11 +33,16 @@ Consumer.prototype.go = function (id2confirm) {
   p.then(this.onFetched.bind(this));
 };
 Consumer.prototype.onFetched = function (msgs) {
-  console.log(this.id, 'fetched', msgs);
   if (msgs && msgs.length) {
+    console.log(this.id, 'fetched', msgs);
     this.go(msgs[msgs.length-1][0]);
   } else {
-    this.destroy();
+    this.attempts--;
+    if (this.attempts<0) {
+      this.destroy();
+    } else {
+      this.go();
+    }
   }
 };
 
@@ -57,7 +65,7 @@ function finishInput(job) {
 
 function store(runNext, job) {
   job.store(tester.generate()).then(null, null, process.exit.bind(process, 0));
-  runNext(store.bind(null, runNext, job), 1000);
+  runNext(store.bind(null, runNext, job), 1);
 }
 
 function go (execlib, LevelDBJob) {
