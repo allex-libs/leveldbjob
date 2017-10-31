@@ -1,6 +1,6 @@
 {
   "name": "allex_leveldbjoblib",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AllexJS lib that implements a LevelDB persisted Job",
   "main": "index.js",
   "scripts": {
