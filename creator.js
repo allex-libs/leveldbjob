@@ -1,5 +1,3 @@
-var Path = require('path');
-
 function createJob (execlib, leveldblib) {
   'use strict';
   var lib = execlib.lib,
@@ -63,7 +61,7 @@ function createJob (execlib, leveldblib) {
     this.locks = new qlib.JobCollection();
     this.fetchDefer = null;
     this.inputFinished = false;
-    this.initLevelDBJob(prophash.jobusernames, prophash.starteddefer);
+    this.initLevelDBJob(prophash.jobusernames, prophash.starteddefer, prophash.initiallyemptydb);
   }
   LevelDBJob.prototype.destroy = function () {
     this.inputFinished = null;
@@ -84,7 +82,7 @@ function createJob (execlib, leveldblib) {
     }
     this.messages = null;
   };
-  LevelDBJob.prototype.initLevelDBJob = function (jobusernames, starteddefer) {
+  LevelDBJob.prototype.initLevelDBJob = function (jobusernames, starteddefer, initiallyemptydb) {
     var md = q.defer(),
       sd = q.defer(),
       promises = [md.promise, sd.promise];
@@ -93,19 +91,21 @@ function createJob (execlib, leveldblib) {
       jobusernames = [];
     }
     new (leveldblib.DBArray)({
-      dbname: Path.join(this.path, 'messages'),
+      dbname: [this.path, 'messages'],
       dbcreationoptions: {
         bufferValueEncoding: jobusernames.concat(['Byte', 'Byte'])  //was read, confirmed reception
       },
       indexsize: 'huge',
+      initiallyemptydb: initiallyemptydb,
       starteddefer: md,
       startfromone: true
     });
     new (leveldblib.LevelDBHandler)({
-      dbname: Path.join(this.path, 'syncs'),
+      dbname: [this.path, 'syncs'],
       dbcreationoptions: {
         leveldbValueEncoding: 'UInt64BECodec'
       },
+      initiallyemptydb: initiallyemptydb,
       starteddefer: sd
     });
     q.all(promises).then(
@@ -157,7 +157,6 @@ function createJob (execlib, leveldblib) {
       if (fd) {
         if (messageisread(stored[1])) {
           this.fetchDefer = null;
-          //console.log('resolving with', [lc, stored[1][0]]);
           fd.resolve([[lc, messagecontents(stored[1])]]);
         } else {
           //mark it read
@@ -172,16 +171,17 @@ function createJob (execlib, leveldblib) {
   };
 
   LevelDBJob.prototype.fetch = function () {
-    var promiseobj = {promise: null};
+    var promiseobj = {promise: null}, _po = promiseobj;
     return this.locks.run('fetch', new qlib.PromiseChainerJob([
       this.syncs.safeGet.bind(this.syncs, 'confirmed', 0),
       this.checkForConfirmed.bind(this),
       function (promise) {
         if (promise && 'object' === typeof promise && promise.hasOwnProperty('promise')) {
-          promiseobj.promise = promise.promise;
+          _po.promise = promise.promise;
         } else {
-          promiseobj.promise = promise;
+          _po.promise = promise;
         }
+        _po = null;
         return q(true);
       }
     ])).then(
@@ -274,9 +274,11 @@ function createJob (execlib, leveldblib) {
       d = q.defer();
       batch.write(fetcherexecutorreporter.bind(null, d));
       return d.promise;
-    } else {
-      return q(false);
     }
+    if (okobj.ok === null) {
+      return q(true);
+    }
+    return q(false);
   }
   function fetcherexecutorreporter (defer, error) {
     if (error) {
@@ -294,16 +296,18 @@ function createJob (execlib, leveldblib) {
     }).then(
       fetcherexecutor.bind(null, okobj, batch)
     ).then(
-      this.doUpdateConfirm.bind(this, msgid)
+      this.doUpdateConfirm.bind(this, msgid, confirmed)
     ).then(
       this.onConfirmDone.bind(this)
     );
   };
 
-  LevelDBJob.prototype.doUpdateConfirm = function (msgid, result) {
+  LevelDBJob.prototype.doUpdateConfirm = function (msgid, confirmed, result) {
     if (result) {
-      //console.log('setting confirmed to', msgid);
-      return this.syncs.put('confirmed', msgid);
+      if (msgid>confirmed) {
+        return this.syncs.put('confirmed', msgid);
+      }
+      return q(true);
     } else {
       return q(0);
     }
